@@ -5,7 +5,7 @@ This repository contains a Google Colab notebook (your_notebook_name.ipynb) that
 <h2>Project Goal</h2>
 The main objective is to explore different techniques for recommending movies based on their content (genres, keywords, overview, etc.) and sentiment, and to understand the impact of feature engineering and model tuning on recommendation quality.
 
-<h2>Model Deployment and Project runnable from HF</h2>
+<h2>Model Deployment and running from HF</h2>
 
 ***Movie Recommendation based on TF-IDF/AutoEncoder/KMeans*** https://huggingface.co/spaces/arupchakraborty2004/MovieRecommendationsV1 
 
