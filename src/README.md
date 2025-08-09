@@ -2,7 +2,7 @@
 
 This project contains modularized Python code extracted from the Jupyter notebook `AAI_Final_Project__Movie_Recommendations_And_Sentiment_Analysis.ipynb`. The code has been refactored into individual modules for better organization, reusability, and deployment.
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 /Users/arupchakraborty/Documents/AAI-590/FinalProject/
@@ -25,7 +25,7 @@ This project contains modularized Python code extracted from the Jupyter noteboo
 └── logs/                           # Pipeline execution logs
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -77,7 +77,7 @@ runner = PipelineRunner()
 results = runner.run_development_mode()
 ```
 
-## 📋 Module Documentation
+## Module Documentation
 
 ### 1. Data Cleaning (`data_cleaning.py`)
 
@@ -308,7 +308,7 @@ prod_results = runner.run_production_mode()
 eval_results = runner.run_evaluation_mode()
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 The pipeline uses a JSON configuration file for customization:
 
@@ -363,7 +363,7 @@ The pipeline uses a JSON configuration file for customization:
 }
 ```
 
-## 🔧 Dependencies
+## Dependencies
 
 ### Required (Core Functionality)
 ```
@@ -389,7 +389,7 @@ langchain-openai>=0.1.0   # OpenAI integration
 openai>=1.0.0             # OpenAI API
 ```
 
-## 🚨 Known Issues and Limitations
+## Known Issues and Limitations
 
 1. **Missing Dependencies**: Some modules have optional dependencies that may not be installed. The code includes fallback mechanisms for most cases.
 
@@ -401,7 +401,7 @@ openai>=1.0.0             # OpenAI API
 
 5. **Path Dependencies**: Some import statements may need adjustment depending on your Python path configuration.
 
-## 🔄 Migration from Notebook
+## Migration from Notebook
 
 To use these modules with your existing notebook data:
 
@@ -429,7 +429,7 @@ saver.save_movie_data(merged_df)
 saver.save_cosine_similarity_matrix(cosine_sim)
 ```
 
-## 📊 Output and Results
+## Output and Results
 
 The pipeline generates various outputs:
 
@@ -438,29 +438,3 @@ The pipeline generates various outputs:
 - **Analysis Reports**: HTML reports, visualizations, performance metrics
 - **Deployment Configs**: Configuration files for production deployment
 - **Logs**: Detailed execution logs and error reports
-
-## 🤝 Contributing
-
-To extend or modify the system:
-
-1. **Add New Models**: Extend the base recommender classes in `model_design.py`
-2. **Custom Analysis**: Add new metrics in `model_analysis.py`
-3. **New Agents**: Create additional agents in `ai_agents.py`
-4. **Pipeline Steps**: Extend the main pipeline with new processing steps
-
-## 📝 License
-
-This project follows the same license as the original notebook. Please refer to the notebook's license information.
-
-## 📞 Support
-
-For issues or questions:
-
-1. Check the individual module documentation
-2. Review the example usage in each file's `main()` function
-3. Examine the comprehensive pipeline in `main_pipeline.py`
-4. Refer to the original notebook for algorithm details
-
----
-
-*This modular extraction was created to improve code organization, reusability, and deployment readiness while preserving all the functionality from the original Jupyter notebook.*
