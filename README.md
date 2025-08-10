@@ -3,7 +3,8 @@
 This repository contains a Google Colab notebook (your_notebook_name.ipynb) that demonstrates the development and experimentation with various machine learning models for building a movie recommendation system. The project focuses primarily on content-based and hybrid approaches, utilizing movie metadata to provide recommendations in the absence of explicit user rating data.
 
 <h2>Project Goal</h2>
-The main objective is to explore different techniques for recommending movies based on their content (genres, keywords, overview, etc.) and sentiment, and to understand the impact of feature engineering and model tuning on recommendation quality.
+
+This comprehensive study presents the development of an advanced, multi-modal movie recommendation system that integrates traditional machine learning approaches with cutting-edge artificial intelligence agents and sentiment analysis capabilities. The primary goal is to create a personalized, explainable, and scalable recommendation platform that addresses the limitations of existing single-algorithm approaches while providing users with meaningful insights into recommendation rationale.
 
 <h2>Model Deployment and running from HF</h2>
 
