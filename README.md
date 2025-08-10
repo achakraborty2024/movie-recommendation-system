@@ -61,12 +61,6 @@ Hyperparameter Tuning & Feature Engineering: Experimenting with different parame
 <h2>Data</h2>
 The project uses the TMDB 5000 Movie Dataset. The necessary CSV files (movies.csv and credits.csv) should be placed in the /tmp directory or adjusted in the notebook's data loading cells.
 
-<h2>How to Run the Notebook</h2>
-Ensure the data files (movies.csv and credits.csv) are accessible, typically by uploading them to your Google Drive and mounting it in Colab, or by placing them in the /tmp directory if using Colab's temporary storage.
-Run the cells sequentially from top to bottom.
-Ensure you have set up your OpenAI API key in Colab's Secrets Manager (under the "🔑" icon) named OPENAI_API_KEY for the agentic flow and sentiment tool to function correctly.
-Follow the instructions and qualitative assessment prompts within the notebook to understand the impact of different steps and model configurations.
-
 <h2>Dependencies</h2>
 The project requires standard Python libraries for data manipulation, machine learning, and natural language processing. Key libraries include:
 
