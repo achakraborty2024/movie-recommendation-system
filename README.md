@@ -30,6 +30,7 @@ The notebook implements and experiments with the following recommendation models
 
 ***Agentic*** An Agentic Flow using LangChain and OpenAI is also implemented to interpret natural language user input, detect sentiment, and utilize the recommendation models via defined tools.
 
+![AI Agent Flow](./src/MovieRecommendationsAgenticFlow.png)
 
 <h2>Key Steps Covered</h2>
 The project guides through the following stages:
