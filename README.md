@@ -9,10 +9,12 @@ This comprehensive study presents the development of an advanced, multi-modal mo
 <h2>Model Deployment and running from HF</h2>
 
 ***Movie Recommendation based on TF-IDF/AutoEncoder/KMeans*** https://huggingface.co/spaces/arupchakraborty2004/MovieRecommendationsV1 
-<img width="600" height="500" alt="image" src="https://github.com/user-attachments/assets/621eb1f4-5b1a-4eb2-94b9-9df3d031d091" />
+<img width="800" height="800" alt="image" src="https://github.com/user-attachments/assets/621eb1f4-5b1a-4eb2-94b9-9df3d031d091" />
 
 
 ***Movie Recommendation based on TF-IDF/AutoEncoder/KMeans using user sentiment and AI agentic flow using LangChain*** https://huggingface.co/spaces/arupchakraborty2004/MovieRecommendationSystemV2
+<img width="800" height="800" alt="image" src="https://github.com/user-attachments/assets/6b3867a7-85ca-40e3-8883-88a0d8c1c5b3" />
+
 
 <h2>Models Implemented</h2>
 The notebook implements and experiments with the following recommendation models:
