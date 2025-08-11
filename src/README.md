@@ -401,33 +401,6 @@ openai>=1.0.0             # OpenAI API
 
 5. **Path Dependencies**: Some import statements may need adjustment depending on your Python path configuration.
 
-## Migration from Notebook
-
-To use these modules with your existing notebook data:
-
-1. **Extract Data Variables**: Copy your processed DataFrames from the notebook
-2. **Initialize Models**: Create model instances with your data
-3. **Run Pipeline**: Use the main pipeline or individual modules
-4. **Save Results**: Use model persistence to save trained models
-
-Example migration:
-```python
-# From notebook
-# merged_df = ... (your processed data)
-# cosine_sim = ... (your similarity matrix)
-
-# To modular code
-from src.model_design import ContentBasedRecommender
-from src.model_persistence import ModelSaver
-
-# Create recommender with your data
-recommender = ContentBasedRecommender(merged_df)
-
-# Save for deployment
-saver = ModelSaver("./my_models")
-saver.save_movie_data(merged_df)
-saver.save_cosine_similarity_matrix(cosine_sim)
-```
 
 ## Output and Results
 
