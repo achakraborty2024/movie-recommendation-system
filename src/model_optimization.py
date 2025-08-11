@@ -1,943 +1,666 @@
-"""
-Model Optimization Module for Movie Recommendation System
-=======================================================
-
-This module provides advanced optimization techniques for recommendation models,
-including hyperparameter tuning, ensemble methods, and performance optimization.
-"""
-
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, BayesSearchCV
-from sklearn.metrics import make_scorer
-import optuna
-import joblib
-import time
-from collections import defaultdict
-import warnings
-
-warnings.filterwarnings('ignore')
-
-try:
-    from skopt import BayesSearchCV
-    SKOPT_AVAILABLE = True
-except ImportError:
-    SKOPT_AVAILABLE = False
-
-try:
-    import optuna
-    OPTUNA_AVAILABLE = True
-except ImportError:
-    OPTUNA_AVAILABLE = False
-
-
-class ModelOptimizer:
-    """
-    Advanced model optimization class using various hyperparameter tuning techniques.
-    """
+def run_model_optimization():
+    print("Columns in movies_df:", movies_df.columns)
+    print("Columns in credits_df:", credits_df.columns)
+    print("Columns in merged_df:", merged_df.columns)
     
-    def __init__(self, random_state=42, n_jobs=-1):
-        """
-        Initialize the model optimizer.
-        
-        Args:
-            random_state (int): Random state for reproducibility
-            n_jobs (int): Number of parallel jobs
-        """
-        self.random_state = random_state
-        self.n_jobs = n_jobs
-        self.optimization_results = {}
-        self.best_models = {}
-        self.optimization_history = defaultdict(list)
+    print("\nSample of movies_df:")
+    display(movies_df.head())
     
-    def optimize_content_based_model(self, train_data, optimization_method='grid', n_trials=100):
+    print("\nSample of credits_df:")
+    display(credits_df.head())
+    
+    print("\nSample of merged_df:")
+    display(merged_df.head())
+    
+    print("\nValue counts for 'vote_count' in merged_df:")
+    print(merged_df['vote_count'].value_counts().head())
+    
+    print("\nValue counts for 'vote_average' in merged_df:")
+    print(merged_df['vote_average'].value_counts().head())
+    
+    def get_item_item_recommendations(title, df, cosine_sim=cosine_sim, num_recommendations=10):
         """
-        Optimize content-based recommendation model.
-        
+        Generates movie recommendations based on item-item collaborative filtering
+        using pre-calculated cosine similarity.
+    
         Args:
-            train_data (pd.DataFrame): Training data
-            optimization_method (str): Optimization method ('grid', 'random', 'bayes', 'optuna')
-            n_trials (int): Number of trials for optuna optimization
-            
+            title (str): The title of the input movie.
+            df (pd.DataFrame): The DataFrame containing movie information (merged_df).
+            cosine_sim (np.array): The cosine similarity matrix based on the 'soup'.
+            num_recommendations (int, optional): The number of recommendations to generate. Defaults to 10.
+    
         Returns:
-            dict: Optimization results
+            pd.DataFrame: A DataFrame containing the recommended movies and their similarity scores.
+                          Returns an empty DataFrame if the movie is not found.
         """
-        print(f"Optimizing Content-Based Model using {optimization_method} search...")
-        
-        # Define parameter space
-        if optimization_method == 'optuna':
-            return self._optimize_content_optuna(train_data, n_trials)
-        else:
-            param_grid = {
-                'max_features': [1000, 5000, 10000, 20000, None],
-                'ngram_range': [(1, 1), (1, 2), (1, 3), (2, 3)],
-                'min_df': [1, 2, 5],
-                'max_df': [0.8, 0.9, 1.0]
-            }
-            
-            return self._optimize_sklearn_model(
-                'content_based', 
-                train_data, 
-                param_grid, 
-                optimization_method
-            )
+        # Create a reverse mapping of movie titles to their indices if it doesn't exist
+        if 'indices' not in globals():
+             global indices
+             indices = pd.Series(df.index, index=df['title']).drop_duplicates()
     
-    def optimize_knn_model(self, train_data, optimization_method='grid', n_trials=50):
-        """
-        Optimize KNN recommendation model.
-        
-        Args:
-            train_data (pd.DataFrame): Training data
-            optimization_method (str): Optimization method
-            n_trials (int): Number of trials for optuna optimization
-            
-        Returns:
-            dict: Optimization results
-        """
-        print(f"Optimizing KNN Model using {optimization_method} search...")
-        
-        if optimization_method == 'optuna':
-            return self._optimize_knn_optuna(train_data, n_trials)
-        else:
-            param_grid = {
-                'n_neighbors': [3, 5, 10, 15, 20, 25, 30],
-                'metric': ['cosine', 'euclidean', 'manhattan'],
-                'max_features': [1000, 5000, 10000]
-            }
-            
-            return self._optimize_sklearn_model(
-                'knn', 
-                train_data, 
-                param_grid, 
-                optimization_method
-            )
     
-    def optimize_clustering_model(self, train_data, optimization_method='grid', n_trials=30):
-        """
-        Optimize clustering recommendation model.
-        
-        Args:
-            train_data (pd.DataFrame): Training data
-            optimization_method (str): Optimization method
-            n_trials (int): Number of trials for optuna optimization
-            
-        Returns:
-            dict: Optimization results
-        """
-        print(f"Optimizing Clustering Model using {optimization_method} search...")
-        
-        if optimization_method == 'optuna':
-            return self._optimize_clustering_optuna(train_data, n_trials)
-        else:
-            param_grid = {
-                'n_clusters': [5, 10, 15, 20, 25, 30, 40],
-                'max_features': [1000, 5000, 10000],
-                'n_init': [10, 20]
-            }
-            
-            return self._optimize_sklearn_model(
-                'clustering', 
-                train_data, 
-                param_grid, 
-                optimization_method
-            )
-    
-    def optimize_autoencoder_model(self, train_data, n_trials=20):
-        """
-        Optimize autoencoder model using Optuna.
-        
-        Args:
-            train_data (pd.DataFrame): Training data
-            n_trials (int): Number of optimization trials
-            
-        Returns:
-            dict: Optimization results
-        """
-        if not OPTUNA_AVAILABLE:
-            print("Optuna not available. Skipping autoencoder optimization.")
-            return None
-        
-        print(f"Optimizing Autoencoder Model using Optuna with {n_trials} trials...")
-        
-        def objective(trial):
-            # Suggest hyperparameters
-            encoding_dim = trial.suggest_categorical('encoding_dim', [32, 64, 128, 256])
-            epochs = trial.suggest_int('epochs', 10, 100)
-            batch_size = trial.suggest_categorical('batch_size', [64, 128, 256])
-            learning_rate = trial.suggest_float('learning_rate', 1e-4, 1e-2, log=True)
-            l2_reg = trial.suggest_float('l2_reg', 1e-6, 1e-3, log=True)
-            
-            try:
-                from .model_design import AutoencoderRecommender
-                
-                # Create and train model
-                model = AutoencoderRecommender(
-                    encoding_dim=encoding_dim,
-                    epochs=epochs,
-                    batch_size=batch_size
-                )
-                
-                # Custom training with suggested parameters
-                history = model.fit(train_data)
-                
-                # Return validation loss
-                val_loss = min(history.history.get('val_loss', history.history['loss']))
-                return val_loss
-                
-            except Exception as e:
-                print(f"Trial failed: {e}")
-                return float('inf')
-        
-        # Run optimization
-        study = optuna.create_study(direction='minimize')
-        study.optimize(objective, n_trials=n_trials)
-        
-        # Store results
-        best_params = study.best_params
-        best_score = study.best_value
-        
-        self.optimization_results['autoencoder'] = {
-            'best_params': best_params,
-            'best_score': best_score,
-            'study': study
-        }
-        
-        print(f"Best Autoencoder Parameters: {best_params}")
-        print(f"Best Validation Loss: {best_score:.4f}")
-        
-        return self.optimization_results['autoencoder']
-    
-    def _optimize_content_optuna(self, train_data, n_trials):
-        """
-        Optimize content-based model using Optuna.
-        """
-        def objective(trial):
-            # Suggest hyperparameters
-            max_features = trial.suggest_categorical('max_features', [1000, 5000, 10000, 20000])
-            ngram_range = trial.suggest_categorical('ngram_range', [(1, 1), (1, 2), (1, 3)])
-            min_df = trial.suggest_int('min_df', 1, 10)
-            max_df = trial.suggest_float('max_df', 0.8, 1.0)
-            
-            try:
-                from .model_design import ContentBasedRecommender
-                
-                model = ContentBasedRecommender(
-                    max_features=max_features,
-                    ngram_range=ngram_range,
-                    stop_words='english'
-                )
-                model.tfidf.min_df = min_df
-                model.tfidf.max_df = max_df
-                
-                model.fit(train_data)
-                
-                # Evaluate using custom metric
-                score = self._evaluate_content_model(model, train_data)
-                return score
-                
-            except Exception as e:
-                print(f"Trial failed: {e}")
-                return 0.0
-        
-        study = optuna.create_study(direction='maximize')
-        study.optimize(objective, n_trials=n_trials)
-        
-        result = {
-            'best_params': study.best_params,
-            'best_score': study.best_value,
-            'study': study
-        }
-        
-        self.optimization_results['content_based'] = result
-        print(f"Best Content-Based Parameters: {study.best_params}")
-        print(f"Best Score: {study.best_value:.4f}")
-        
-        return result
-    
-    def _optimize_knn_optuna(self, train_data, n_trials):
-        """
-        Optimize KNN model using Optuna.
-        """
-        def objective(trial):
-            n_neighbors = trial.suggest_int('n_neighbors', 3, 50)
-            metric = trial.suggest_categorical('metric', ['cosine', 'euclidean'])
-            max_features = trial.suggest_categorical('max_features', [1000, 5000, 10000])
-            
-            try:
-                from .model_design import KNNRecommender
-                
-                model = KNNRecommender(n_neighbors=n_neighbors, metric=metric)
-                model.tfidf.max_features = max_features
-                model.fit(train_data)
-                
-                score = self._evaluate_knn_model(model, train_data)
-                return score
-                
-            except Exception as e:
-                print(f"Trial failed: {e}")
-                return 0.0
-        
-        study = optuna.create_study(direction='maximize')
-        study.optimize(objective, n_trials=n_trials)
-        
-        result = {
-            'best_params': study.best_params,
-            'best_score': study.best_value,
-            'study': study
-        }
-        
-        self.optimization_results['knn'] = result
-        print(f"Best KNN Parameters: {study.best_params}")
-        print(f"Best Score: {study.best_value:.4f}")
-        
-        return result
-    
-    def _optimize_clustering_optuna(self, train_data, n_trials):
-        """
-        Optimize clustering model using Optuna.
-        """
-        def objective(trial):
-            n_clusters = trial.suggest_int('n_clusters', 5, 50)
-            max_features = trial.suggest_categorical('max_features', [1000, 5000, 10000])
-            
-            try:
-                from .model_design import ClusteringRecommender
-                
-                model = ClusteringRecommender(
-                    n_clusters=n_clusters, 
-                    random_state=self.random_state
-                )
-                model.tfidf.max_features = max_features
-                model.fit(train_data)
-                
-                score = self._evaluate_clustering_model(model)
-                return score
-                
-            except Exception as e:
-                print(f"Trial failed: {e}")
-                return 0.0
-        
-        study = optuna.create_study(direction='maximize')
-        study.optimize(objective, n_trials=n_trials)
-        
-        result = {
-            'best_params': study.best_params,
-            'best_score': study.best_value,
-            'study': study
-        }
-        
-        self.optimization_results['clustering'] = result
-        print(f"Best Clustering Parameters: {study.best_params}")
-        print(f"Best Score: {study.best_value:.4f}")
-        
-        return result
-    
-    def _optimize_sklearn_model(self, model_name, train_data, param_grid, method):
-        """
-        Optimize model using scikit-learn optimization methods.
-        """
-        from .model_design import create_recommendation_pipeline
-        
-        # Create base model
-        base_model = create_recommendation_pipeline(model_name)
-        
-        # Create scoring function
-        def custom_scorer(estimator, X, y=None):
-            try:
-                if model_name == 'content_based':
-                    return self._evaluate_content_model(estimator, train_data)
-                elif model_name == 'knn':
-                    return self._evaluate_knn_model(estimator, train_data)
-                elif model_name == 'clustering':
-                    return self._evaluate_clustering_model(estimator)
-                else:
-                    return 0.0
-            except:
-                return 0.0
-        
-        scorer = make_scorer(custom_scorer, greater_is_better=True)
-        
-        # Choose optimization method
-        if method == 'grid':
-            optimizer = GridSearchCV(
-                base_model, 
-                param_grid, 
-                scoring=scorer,
-                cv=3,
-                n_jobs=self.n_jobs,
-                verbose=1
-            )
-        elif method == 'random':
-            optimizer = RandomizedSearchCV(
-                base_model,
-                param_grid,
-                n_iter=20,
-                scoring=scorer,
-                cv=3,
-                n_jobs=self.n_jobs,
-                random_state=self.random_state,
-                verbose=1
-            )
-        elif method == 'bayes' and SKOPT_AVAILABLE:
-            optimizer = BayesSearchCV(
-                base_model,
-                param_grid,
-                n_iter=20,
-                scoring=scorer,
-                cv=3,
-                n_jobs=self.n_jobs,
-                random_state=self.random_state
-            )
-        else:
-            print(f"Method {method} not available. Using grid search.")
-            optimizer = GridSearchCV(
-                base_model, 
-                param_grid, 
-                scoring=scorer,
-                cv=3,
-                n_jobs=self.n_jobs
-            )
-        
-        # Fit optimizer
-        X_dummy = train_data[['title']].copy()  # Dummy features for sklearn compatibility
-        optimizer.fit(X_dummy)
-        
-        result = {
-            'best_params': optimizer.best_params_,
-            'best_score': optimizer.best_score_,
-            'cv_results': optimizer.cv_results_
-        }
-        
-        self.optimization_results[model_name] = result
-        print(f"Best {model_name} Parameters: {optimizer.best_params_}")
-        print(f"Best Score: {optimizer.best_score_:.4f}")
-        
-        return result
-    
-    def optimize_hybrid_weights(self, train_data, component_models, n_trials=50):
-        """
-        Optimize weights for hybrid model using Optuna.
-        
-        Args:
-            train_data (pd.DataFrame): Training data
-            component_models (dict): Component models
-            n_trials (int): Number of optimization trials
-            
-        Returns:
-            dict: Optimization results
-        """
-        if not OPTUNA_AVAILABLE:
-            print("Optuna not available. Using equal weights.")
-            return {'best_weights': {name: 1.0/len(component_models) for name in component_models.keys()}}
-        
-        print(f"Optimizing hybrid model weights with {n_trials} trials...")
-        
-        def objective(trial):
-            # Suggest weights for each component model
-            weights = {}
-            weight_sum = 0
-            
-            for model_name in component_models.keys():
-                weight = trial.suggest_float(f'weight_{model_name}', 0.0, 1.0)
-                weights[model_name] = weight
-                weight_sum += weight
-            
-            # Normalize weights
-            if weight_sum > 0:
-                weights = {name: weight/weight_sum for name, weight in weights.items()}
-            else:
-                weights = {name: 1.0/len(component_models) for name in component_models.keys()}
-            
-            try:
-                from .model_design import HybridRecommender
-                
-                # Create and fit hybrid model
-                hybrid_model = HybridRecommender(component_models, weights)
-                hybrid_model.fit(train_data)
-                
-                # Evaluate hybrid model
-                score = self._evaluate_hybrid_model(hybrid_model, train_data)
-                return score
-                
-            except Exception as e:
-                print(f"Trial failed: {e}")
-                return 0.0
-        
-        study = optuna.create_study(direction='maximize')
-        study.optimize(objective, n_trials=n_trials)
-        
-        result = {
-            'best_weights': {k.replace('weight_', ''): v for k, v in study.best_params.items()},
-            'best_score': study.best_value,
-            'study': study
-        }
-        
-        self.optimization_results['hybrid_weights'] = result
-        print(f"Best Hybrid Weights: {result['best_weights']}")
-        print(f"Best Score: {study.best_value:.4f}")
-        
-        return result
-    
-    def create_ensemble_model(self, models, ensemble_method='voting', weights=None):
-        """
-        Create an ensemble of recommendation models.
-        
-        Args:
-            models (dict): Dictionary of trained models
-            ensemble_method (str): Ensemble method ('voting', 'weighted', 'stacking')
-            weights (dict): Weights for weighted ensemble
-            
-        Returns:
-            EnsembleRecommender: Ensemble model
-        """
-        print(f"Creating ensemble model using {ensemble_method} method...")
-        
-        if ensemble_method == 'voting':
-            return VotingEnsemble(models)
-        elif ensemble_method == 'weighted':
-            return WeightedEnsemble(models, weights)
-        elif ensemble_method == 'stacking':
-            return StackingEnsemble(models)
-        else:
-            raise ValueError(f"Unknown ensemble method: {ensemble_method}")
-    
-    def _evaluate_content_model(self, model, data):
-        """Evaluate content-based model."""
-        try:
-            if hasattr(model, 'tfidf_matrix') and model.tfidf_matrix is not None:
-                sparsity = 1.0 - (model.tfidf_matrix.nnz / (model.tfidf_matrix.shape[0] * model.tfidf_matrix.shape[1]))
-                return sparsity
-            return 0.0
-        except:
-            return 0.0
-    
-    def _evaluate_knn_model(self, model, data):
-        """Evaluate KNN model."""
-        try:
-            sample_size = min(10, len(data))
-            sample_movies = data.sample(n=sample_size, random_state=self.random_state)
-            
-            scores = []
-            for _, row in sample_movies.iterrows():
-                try:
-                    recs = model.get_recommendations(row['title'], 5)
-                    if not recs.empty and 'similarity_score' in recs.columns:
-                        scores.append(recs['similarity_score'].mean())
-                except:
-                    continue
-            
-            return np.mean(scores) if scores else 0.0
-        except:
-            return 0.0
-    
-    def _evaluate_clustering_model(self, model):
-        """Evaluate clustering model."""
-        try:
-            from sklearn.metrics import silhouette_score
-            
-            if hasattr(model, 'data') and 'cluster' in model.data.columns:
-                features = model.feature_matrix.toarray()
-                labels = model.data['cluster'].values
-                score = silhouette_score(features, labels)
-                return score
-            return 0.0
-        except:
-            return 0.0
-    
-    def _evaluate_hybrid_model(self, model, data):
-        """Evaluate hybrid model."""
-        try:
-            sample_size = min(10, len(data))
-            sample_movies = data.sample(n=sample_size, random_state=self.random_state)
-            
-            scores = []
-            for _, row in sample_movies.iterrows():
-                try:
-                    recs = model.get_recommendations(row['title'], 5)
-                    if not recs.empty and 'combined_score' in recs.columns:
-                        scores.append(recs['combined_score'].mean())
-                except:
-                    continue
-            
-            return np.mean(scores) if scores else 0.0
-        except:
-            return 0.0
-    
-    def compare_optimization_methods(self, train_data, model_type='content_based'):
-        """
-        Compare different optimization methods for a model.
-        
-        Args:
-            train_data (pd.DataFrame): Training data
-            model_type (str): Type of model to optimize
-            
-        Returns:
-            dict: Comparison results
-        """
-        print(f"Comparing optimization methods for {model_type} model...")
-        
-        methods = ['grid', 'random']
-        if SKOPT_AVAILABLE:
-            methods.append('bayes')
-        if OPTUNA_AVAILABLE:
-            methods.append('optuna')
-        
-        results = {}
-        
-        for method in methods:
-            print(f"\nTesting {method} search...")
-            start_time = time.time()
-            
-            try:
-                if model_type == 'content_based':
-                    result = self.optimize_content_based_model(train_data, method, n_trials=20)
-                elif model_type == 'knn':
-                    result = self.optimize_knn_model(train_data, method, n_trials=20)
-                elif model_type == 'clustering':
-                    result = self.optimize_clustering_model(train_data, method, n_trials=20)
-                else:
-                    continue
-                
-                optimization_time = time.time() - start_time
-                
-                results[method] = {
-                    'best_score': result['best_score'],
-                    'best_params': result['best_params'],
-                    'optimization_time': optimization_time
-                }
-                
-                print(f"{method} - Score: {result['best_score']:.4f}, Time: {optimization_time:.2f}s")
-                
-            except Exception as e:
-                print(f"Error with {method}: {e}")
-                results[method] = {'error': str(e)}
-        
-        # Find best method
-        valid_results = {k: v for k, v in results.items() if 'error' not in v}
-        if valid_results:
-            best_method = max(valid_results.keys(), key=lambda k: valid_results[k]['best_score'])
-            results['best_method'] = best_method
-            print(f"\nBest optimization method: {best_method}")
-        
-        return results
-    
-    def save_optimization_results(self, filepath='optimization_results.joblib'):
-        """
-        Save optimization results to file.
-        
-        Args:
-            filepath (str): Path to save results
-        """
-        results_to_save = {}
-        
-        for model_name, result in self.optimization_results.items():
-            # Remove study objects which can't be pickled easily
-            clean_result = result.copy()
-            if 'study' in clean_result:
-                clean_result['study_best_params'] = clean_result['study'].best_params
-                clean_result['study_best_value'] = clean_result['study'].best_value
-                del clean_result['study']
-            
-            results_to_save[model_name] = clean_result
-        
-        joblib.dump(results_to_save, filepath)
-        print(f"Optimization results saved to {filepath}")
-    
-    def print_optimization_summary(self):
-        """
-        Print a summary of optimization results.
-        """
-        print("="*60)
-        print("OPTIMIZATION SUMMARY")
-        print("="*60)
-        
-        for model_name, result in self.optimization_results.items():
-            print(f"\n{model_name.upper()} MODEL:")
-            print(f"  Best Score: {result.get('best_score', 'N/A')}")
-            print(f"  Best Parameters: {result.get('best_params', 'N/A')}")
-            
-            if 'optimization_time' in result:
-                print(f"  Optimization Time: {result['optimization_time']:.2f}s")
-
-
-class VotingEnsemble:
-    """
-    Voting ensemble for recommendation models.
-    """
-    
-    def __init__(self, models):
-        """
-        Initialize voting ensemble.
-        
-        Args:
-            models (dict): Dictionary of models
-        """
-        self.models = models
-        self.data = None
-    
-    def fit(self, data, content_column='soup'):
-        """
-        Fit all models in ensemble.
-        
-        Args:
-            data (pd.DataFrame): Training data
-            content_column (str): Content column name
-        """
-        self.data = data
-        for name, model in self.models.items():
-            print(f"Fitting {name} model...")
-            model.fit(data, content_column)
-    
-    def get_recommendations(self, title, num_recommendations=10):
-        """
-        Get recommendations using voting ensemble.
-        
-        Args:
-            title (str): Movie title
-            num_recommendations (int): Number of recommendations
-            
-        Returns:
-            pd.DataFrame: Ensemble recommendations
-        """
-        all_recommendations = defaultdict(int)
-        
-        # Get recommendations from each model
-        for name, model in self.models.items():
-            try:
-                recs = model.get_recommendations(title, num_recommendations * 2)
-                if not recs.empty:
-                    for _, row in recs.iterrows():
-                        all_recommendations[row['title']] += 1
-            except:
-                continue
-        
-        # Sort by votes
-        sorted_recs = sorted(all_recommendations.items(), key=lambda x: x[1], reverse=True)
-        
-        # Create result DataFrame
-        if sorted_recs:
-            top_recs = sorted_recs[:num_recommendations]
-            result_data = []
-            
-            for movie_title, votes in top_recs:
-                movie_info = self.data[self.data['title'] == movie_title]
-                if not movie_info.empty:
-                    movie_row = movie_info.iloc[0]
-                    result_data.append({
-                        'title': movie_title,
-                        'votes': votes,
-                        'genres': movie_row.get('genres', ''),
-                        'overview': movie_row.get('overview', '')
-                    })
-            
-            return pd.DataFrame(result_data)
-        else:
+        # Get the index of the movie that matches the title
+        if title not in indices:
+            print(f"Movie '{title}' not found in the dataset.")
             return pd.DataFrame()
-
-
-class WeightedEnsemble:
-    """
-    Weighted ensemble for recommendation models.
-    """
     
-    def __init__(self, models, weights=None):
-        """
-        Initialize weighted ensemble.
-        
-        Args:
-            models (dict): Dictionary of models
-            weights (dict): Model weights
-        """
-        self.models = models
-        self.weights = weights or {name: 1.0/len(models) for name in models.keys()}
-        self.data = None
+        idx = indices[title]
     
-    def fit(self, data, content_column='soup'):
-        """
-        Fit all models in ensemble.
-        
-        Args:
-            data (pd.DataFrame): Training data
-            content_column (str): Content column name
-        """
-        self.data = data
-        for name, model in self.models.items():
-            print(f"Fitting {name} model...")
-            model.fit(data, content_column)
+        # Get the pairwise similarity scores for all movies with that movie
+        sim_scores = list(enumerate(cosine_sim[idx]))
     
-    def get_recommendations(self, title, num_recommendations=10):
+        # Sort the movies based on the similarity scores
+        sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
+    
+        # Get the scores of the num_recommendations most similar movies
+        # Skip the first element as it is the movie itself
+        sim_scores = sim_scores[1:num_recommendations+1]
+    
+        # Get the movie indices and their similarity scores
+        movie_indices = [(i[0], i[1]) for i in sim_scores]
+    
+        # Create a list of recommended movies and their similarity scores
+        recommendations_list = []
+        for idx, similarity_score in movie_indices:
+            recommendations_list.append({
+                'Recommended Movie': df['title'].iloc[idx],
+                'Similarity Score (Cosine)': similarity_score
+            })
+    
+        return pd.DataFrame(recommendations_list)
+    
+    # Example Usage: Get item-item recommendations for a movie
+    movie_title_for_item_item = 'Avatar'  #@param {type:"string"}
+    num_recommendations_item_item = 10  #@param {type:"slider", min:1, max:20, step:1}
+    
+    item_item_recommendations = get_item_item_recommendations(
+        movie_title_for_item_item,
+        merged_df,
+        cosine_sim=cosine_sim,
+        num_recommendations=num_recommendations_item_item
+    )
+    
+    print(f"\nItem-Item Recommendations for '{movie_title_for_item_item}':")
+    display(item_item_recommendations)
+    
+    # Define a function to generate combined recommendations
+    def get_combined_recommendations_weighted(title, df, cosine_sim, num_recommendations=5, sentiment_weight=0.5, content_weight=0.5):
         """
-        Get recommendations using weighted ensemble.
-        
+        Generates movie recommendations based on combined sentiment and content similarity,
+        with customizable weights for each component.
+    
         Args:
-            title (str): Movie title
-            num_recommendations (int): Number of recommendations
-            
+            title (str): The title of the input movie.
+            df (pd.DataFrame): The DataFrame containing movie information (merged_df).
+            cosine_sim (np.array): The cosine similarity matrix based on the 'soup'.
+            num_recommendations (int, optional): The number of recommendations to generate. Defaults to 5.
+            sentiment_weight (float, optional): Weight for sentiment similarity. Defaults to 0.5.
+            content_weight (float, optional): Weight for content similarity. Defaults to 0.5.
+    
         Returns:
-            pd.DataFrame: Ensemble recommendations
+            pd.DataFrame: A DataFrame containing the recommended movies and their combined scores.
+                          Returns an empty DataFrame if the movie is not found.
         """
-        all_recommendations = defaultdict(float)
-        
-        # Get weighted recommendations from each model
-        for name, model in self.models.items():
-            try:
-                recs = model.get_recommendations(title, num_recommendations * 2)
-                weight = self.weights.get(name, 0.0)
-                
-                if not recs.empty:
-                    for _, row in recs.iterrows():
-                        score = row.get('similarity_score', 1.0)
-                        all_recommendations[row['title']] += score * weight
-            except:
-                continue
-        
-        # Sort by weighted scores
-        sorted_recs = sorted(all_recommendations.items(), key=lambda x: x[1], reverse=True)
-        
-        # Create result DataFrame
-        if sorted_recs:
-            top_recs = sorted_recs[:num_recommendations]
-            result_data = []
-            
-            for movie_title, weighted_score in top_recs:
-                movie_info = self.data[self.data['title'] == movie_title]
-                if not movie_info.empty:
-                    movie_row = movie_info.iloc[0]
-                    result_data.append({
-                        'title': movie_title,
-                        'weighted_score': weighted_score,
-                        'genres': movie_row.get('genres', ''),
-                        'overview': movie_row.get('overview', '')
-                    })
-            
-            return pd.DataFrame(result_data)
-        else:
+        # Create a reverse mapping of movie titles to their indices if it doesn't exist
+        if 'indices' not in globals():
+             global indices
+             indices = pd.Series(df.index, index=df['title']).drop_duplicates()
+    
+        if title not in indices:
+            print(f"Movie '{title}' not found in the dataset.")
             return pd.DataFrame()
-
-
-class StackingEnsemble:
-    """
-    Stacking ensemble for recommendation models.
-    """
     
-    def __init__(self, models):
-        """
-        Initialize stacking ensemble.
-        
-        Args:
-            models (dict): Dictionary of models
-        """
-        self.models = models
-        self.meta_learner = None
-        self.data = None
+        idx = indices[title]
+        input_sentiment_score = df.loc[idx, 'overview_sentiment_score']
     
-    def fit(self, data, content_column='soup'):
-        """
-        Fit stacking ensemble.
-        
-        Args:
-            data (pd.DataFrame): Training data
-            content_column (str): Content column name
-        """
-        self.data = data
-        
-        # Fit base models
-        for name, model in self.models.items():
-            print(f"Fitting {name} model...")
-            model.fit(data, content_column)
-        
-        # Train meta-learner (simplified for this example)
-        print("Training meta-learner...")
-        # In practice, this would use cross-validation predictions from base models
-        # For simplicity, we'll use equal weights
-        self.meta_learner = {name: 1.0/len(self.models) for name in self.models.keys()}
+        # Get sentiment similarity scores (closer to 0 difference is better)
+        # We need to invert this difference to get a similarity score (higher is better)
+        df_temp = df.copy()
+        df_temp['sentiment_difference'] = abs(df_temp['overview_sentiment_score'] - input_sentiment_score)
+        df_temp['sentiment_rank'] = df_temp['sentiment_difference'].rank(method='min', ascending=True)
+        # Normalize sentiment rank (higher rank = less similar, so invert)
+        df_temp['normalized_sentiment_sim'] = 1 / df_temp['sentiment_rank']
+        df_temp['normalized_sentiment_sim'] = df_temp['normalized_sentiment_sim'] / df_temp['normalized_sentiment_sim'].max() # Normalize to 0-1
     
-    def get_recommendations(self, title, num_recommendations=10):
-        """
-        Get recommendations using stacking ensemble.
-        
-        Args:
-            title (str): Movie title
-            num_recommendations (int): Number of recommendations
-            
-        Returns:
-            pd.DataFrame: Ensemble recommendations
-        """
-        # For simplicity, this acts like a weighted ensemble
-        # In practice, the meta-learner would make the final decision
-        all_recommendations = defaultdict(float)
-        
-        for name, model in self.models.items():
-            try:
-                recs = model.get_recommendations(title, num_recommendations * 2)
-                weight = self.meta_learner.get(name, 0.0)
-                
-                if not recs.empty:
-                    for _, row in recs.iterrows():
-                        score = row.get('similarity_score', 1.0)
-                        all_recommendations[row['title']] += score * weight
-            except:
-                continue
-        
-        # Sort and return results
-        sorted_recs = sorted(all_recommendations.items(), key=lambda x: x[1], reverse=True)
-        
-        if sorted_recs:
-            top_recs = sorted_recs[:num_recommendations]
-            result_data = []
-            
-            for movie_title, score in top_recs:
-                movie_info = self.data[self.data['title'] == movie_title]
-                if not movie_info.empty:
-                    movie_row = movie_info.iloc[0]
-                    result_data.append({
-                        'title': movie_title,
-                        'ensemble_score': score,
-                        'genres': movie_row.get('genres', ''),
-                        'overview': movie_row.get('overview', '')
-                    })
-            
-            return pd.DataFrame(result_data)
-        else:
-            return pd.DataFrame()
-
-
-def main():
-    """
-    Example usage of the ModelOptimizer class.
-    """
-    # Create sample data
-    sample_data = pd.DataFrame({
-        'title': [f'Movie {i}' for i in range(100)],
-        'genres': (['Action'] * 25 + ['Drama'] * 25 + 
-                  ['Comedy'] * 25 + ['Horror'] * 25),
-        'overview': [f'This is a great movie about topic {i}' for i in range(100)],
-        'soup': [f'movie {i} action adventure great story topic {i}' for i in range(100)]
+    
+        # Get content similarity scores
+        sim_scores = list(enumerate(cosine_sim[idx]))
+        # Convert similarity scores to a Series
+        content_sim_series = pd.Series([score for index, score in sim_scores])
+        df_temp['content_sim'] = content_sim_series
+        # Normalize content similarity
+        df_temp['normalized_content_sim'] = df_temp['content_sim'] / df_temp['content_sim'].max()
+    
+    
+        # Combine scores using weights
+        df_temp['combined_score'] = (df_temp['normalized_sentiment_sim'] * sentiment_weight) + (df_temp['normalized_content_sim'] * content_weight)
+    
+        # Sort movies based on the combined score
+        # Exclude the input movie itself
+        recommended_movies = df_temp.sort_values(by='combined_score', ascending=False).head(num_recommendations + 1)
+    
+        # Filter out the input movie
+        recommended_movies = recommended_movies[recommended_movies['title'] != title]
+    
+        # Return the top recommendations with relevant information
+        return recommended_movies[['title', 'overview_sentiment_score', 'combined_score']].reset_index(drop=True)
+    
+    # Experiment with different weighting schemes and display recommendations
+    movie_title_for_combined = 'Avatar'
+    num_recommendations_combined = 10
+    
+    # Experiment 1: Equal weights
+    print(f"\nCombined recommendations for '{movie_title_for_combined}' (Sentiment weight: 0.5, Content weight: 0.5):")
+    recommendations_equal_weights = get_combined_recommendations_weighted(
+        movie_title_for_combined,
+        merged_df,
+        cosine_sim=cosine_sim,
+        num_recommendations=num_recommendations_combined,
+        sentiment_weight=0.5,
+        content_weight=0.5
+    )
+    display(recommendations_equal_weights)
+    
+    # Experiment 2: Higher content weight
+    print(f"\nCombined recommendations for '{movie_title_for_combined}' (Sentiment weight: 0.2, Content weight: 0.8):")
+    recommendations_higher_content = get_combined_recommendations_weighted(
+        movie_title_for_combined,
+        merged_df,
+        cosine_sim=cosine_sim,
+        num_recommendations=num_recommendations_combined,
+        sentiment_weight=0.2,
+        content_weight=0.8
+    )
+    display(recommendations_higher_content)
+    
+    # Experiment 3: Higher sentiment weight
+    print(f"\nCombined recommendations for '{movie_title_for_combined}' (Sentiment weight: 0.8, Content weight: 0.2):")
+    recommendations_higher_sentiment = get_combined_recommendations_weighted(
+        movie_title_for_combined,
+        merged_df,
+        cosine_sim=cosine_sim,
+        num_recommendations=num_recommendations_combined,
+        sentiment_weight=0.8,
+        content_weight=0.2
+    )
+    display(recommendations_higher_sentiment)
+    
+    # Experiment with TF-IDF Vectorizer hyperparameters
+    
+    print("## Experimenting with TF-IDF Vectorizer Hyperparameters\n")
+    
+    # Original TF-IDF (already fitted)
+    tfidf = TfidfVectorizer(stop_words='english', ngram_range=(1, 2), max_features=86621)
+    tfidf_matrix = tfidf.fit_transform(merged_df['soup'].fillna(''))
+    
+    # Experiment with different TF-IDF hyperparameters
+    tfidf_experiments = {
+        'Original': {'max_features': None, 'ngram_range': (1, 1), 'min_df': 1, 'max_df': 1.0},
+        'Max_Features_5000': {'max_features': 5000, 'ngram_range': (1, 1), 'min_df': 1, 'max_df': 1.0},
+        'Ngram_Range_1_2': {'max_features': None, 'ngram_range': (1, 2), 'min_df': 1, 'max_df': 1.0},
+        'Min_DF_5': {'max_features': None, 'ngram_range': (1, 1), 'min_df': 5, 'max_df': 1.0},
+        'Max_DF_0_9': {'max_features': None, 'ngram_range': (1, 1), 'min_df': 1, 'max_df': 0.9}
+    }
+    
+    sample_movie_for_tfidf = "Pirates of the Caribbean: At World\'s End"
+    num_recommendations_tfidf_exp = 5
+    
+    original_tfidf = TfidfVectorizer(stop_words='english', ngram_range=(1, 2), max_features=86621)
+    original_tfidf_matrix = original_tfidf.fit_transform(merged_df['soup'].fillna(''))
+    original_cosine_sim = linear_kernel(original_tfidf_matrix, original_tfidf_matrix)
+    
+    # Use the existing get_content_based_recommendations function
+    
+    print(f"Generating recommendations for '{sample_movie_for_tfidf}' using different TF-IDF settings:")
+    optimized_tfidf=None # save to use later for model deployment
+    for name, params in tfidf_experiments.items():
+        print(f"\n--- TF-IDF Experiment: {name} ---")
+        try:
+            # Create and fit a new TF-IDF vectorizer with the experimental parameters
+            optimized_tfidf = TfidfVectorizer(stop_words='english', **params)
+            current_tfidf_matrix = optimized_tfidf.fit_transform(merged_df['soup'].fillna(''))
+            current_cosine_sim = linear_kernel(current_tfidf_matrix, current_tfidf_matrix)
+    
+            # Generate recommendations using the new cosine similarity matrix
+            current_recommendations = get_content_based_recommendations(
+                sample_movie_for_tfidf,
+                merged_df,
+                cosine_sim=current_cosine_sim,
+                num_recommendations=num_recommendations_tfidf_exp
+            )
+    
+            print(f"Recommendations for '{sample_movie_for_tfidf}' with {name} TF-IDF:")
+            display(current_recommendations)
+    
+            # Qualitative assessment (manual observation of displayed recommendations)
+            print(f"Qualitative Assessment for {name}: [Observe the recommendations above and note changes compared to Original]")
+    
+        except Exception as e:
+            print(f"Error running TF-IDF experiment {name}: {e}")
+    
+    
+    # @title genres vs keywords
+    
+    from matplotlib import pyplot as plt
+    import seaborn as sns
+    import pandas as pd
+    plt.subplots(figsize=(8, 8))
+    df_2dhist = pd.DataFrame({
+        x_label: grp['keywords'].value_counts()
+        for x_label, grp in current_recommendations.groupby('genres')
     })
+    sns.heatmap(df_2dhist, cmap='viridis')
+    plt.xlabel('genres')
+    _ = plt.ylabel('keywords')
     
-    print("Initializing Model Optimizer...")
-    optimizer = ModelOptimizer()
+    # @title overview_sentiment_score
     
-    # Optimize models
-    print("\nOptimizing models...")
+    from matplotlib import pyplot as plt
+    current_recommendations['overview_sentiment_score'].plot(kind='hist', bins=20, title='overview_sentiment_score')
+    plt.gca().spines[['top', 'right',]].set_visible(False)
     
-    # Content-based optimization
-    optimizer.optimize_content_based_model(sample_data, 'optuna', n_trials=10)
+    import matplotlib.pyplot as plt
+    from tensorflow.keras.layers import Input, Dense
+    from tensorflow.keras.models import Model
+    from tensorflow.keras.callbacks import EarlyStopping # Import EarlyStopping
+    from tensorflow.keras.regularizers import l2 # Import l2 regularizer
+    from IPython.display import display
+    import pandas as pd
+    from sklearn.metrics.pairwise import cosine_similarity
+    import numpy as np
     
-    # KNN optimization
-    optimizer.optimize_knn_model(sample_data, 'optuna', n_trials=10)
+    # Dummy get_autoencoder_recommendations for demonstration if not available
+    def get_autoencoder_recommendations(movie_title, df, latent_cosine_sim, num_recommendations=5):
+        if movie_title not in df['title'].values:
+            return f"Movie '{movie_title}' not found in the dataset."
+        idx = df[df['title'] == movie_title].index[0]
+        sim_scores = list(enumerate(latent_cosine_sim[idx]))
+        sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
+        sim_scores = sim_scores[1:num_recommendations+1]
+        movie_indices = [i[0] for i in sim_scores]
+        return df['title'].iloc[movie_indices]
     
-    # Clustering optimization
-    optimizer.optimize_clustering_model(sample_data, 'optuna', n_trials=10)
     
-    # Print summary
-    optimizer.print_optimization_summary()
+    print("\n## Experimenting with Autoencoder Hyperparameters (with Early Stopping and Weight Decay)\n")
     
-    # Save results
-    optimizer.save_optimization_results()
+    # Autoencoder Model Parameter Experiments
+    # Increased epochs to 100 to allow EarlyStopping to work effectively
+    autoencoder_experiments = {
+        'Original_Optimized': {'encoding_dim': 128, 'epochs': 100, 'batch_size': 256},
+        'Small_Latent_Space': {'encoding_dim': 64, 'epochs': 100, 'batch_size': 256},
+        'Large_Latent_Space': {'encoding_dim': 256, 'epochs': 100, 'batch_size': 256},
+    }
     
-    print("\nOptimization completed!")
+    # A movie to evaluate recommendations qualitatively
+    sample_movie_for_autoencoder = 'The Matrix'
+    num_recommendations_autoencoder_exp = 5
+    
+    # Define the EarlyStopping callback
+    # It will monitor validation loss and stop if there's no improvement after 5 epochs.
+    # It will also restore the best weights found during training.
+    early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+    
+    print(f"Generating recommendations for '{sample_movie_for_autoencoder}' using different Autoencoder settings:")
+    current_encoder = None # To hold the final or best encoder for saving later
+    
+    for name, params in autoencoder_experiments.items():
+        print(f"\n--- Autoencoder Experiment: {name} ---")
+        try:
+            # Build the Autoencoder Model with L2 Regularization (Weight Decay)
+            input_layer = Input(shape=(tfidf_scaled.shape[1],))
+            encoder_layer = Dense(params['encoding_dim'], activation='relu', kernel_regularizer=l2(1e-5))(input_layer)
+            decoder_layer = Dense(tfidf_scaled.shape[1], activation='sigmoid', kernel_regularizer=l2(1e-5))(encoder_layer)
+            optimized_autoencoder = Model(inputs=input_layer, outputs=decoder_layer)
+    
+            optimized_autoencoder.compile(optimizer='adam', loss='mse')
+    
+            # Train the Autoencoder with the EarlyStopping callback
+            print(f"Training Autoencoder for {name} with up to {params['epochs']} epochs...")
+            history = optimized_autoencoder.fit(tfidf_scaled, tfidf_scaled,
+                                                epochs=params['epochs'],
+                                                batch_size=params['batch_size'],
+                                                shuffle=True,
+                                                validation_split=0.1, # Use 10% of data for validation
+                                                callbacks=[early_stopping], # callback here
+                                                verbose=0)
+            print(f"Training Complete. Stopped at epoch: {len(history.history['loss'])}")
+    
+            # --- PLOT THE LOSS CURVE (WITH VALIDATION LOSS) ---
+            plt.figure(figsize=(10, 5))
+            plt.plot(history.history['loss'], label='Training Loss')
+            plt.plot(history.history['val_loss'], label='Validation Loss')
+            plt.title(f'Loss Curve for Experiment: {name}')
+            plt.xlabel('Epoch')
+            plt.ylabel('Mean Squared Error (Loss)')
+            plt.legend()
+            plt.grid(True)
+            plt.show()
+            # --- END OF PLOTTING ---
+    
+            # Get the Encoder model and latent features
+            current_encoder = Model(inputs=input_layer, outputs=encoder_layer)
+            current_latent_features = current_encoder.predict(tfidf_scaled, verbose=0)
+    
+            # Calculate cosine similarity matrix on the latent features
+            current_latent_cosine_sim = cosine_similarity(current_latent_features)
+    
+            # Generate recommendations
+            current_autoencoder_recommendations = get_autoencoder_recommendations(
+                sample_movie_for_autoencoder,
+                merged_df,
+                latent_cosine_sim=current_latent_cosine_sim,
+                num_recommendations=num_recommendations_autoencoder_exp
+            )
+    
+            print(f"Recommendations for '{sample_movie_for_autoencoder}' with {name} Autoencoder:")
+            display(current_autoencoder_recommendations)
+    
+        except Exception as e:
+            print(f"Error running Autoencoder experiment {name}: {e}")
+    
+    # Experiment with kNN hyperparameters
+    
+    print("\n## Experimenting with kNN Hyperparameters\n")
+    
+    # kNN Hyperparameter Experiments
+    knn_experiments = {
+        'Original_k10': {'n_neighbors': 10}, # Original setting
+        'k_5': {'n_neighbors': 5},       # Fewer neighbors
+        'k_20': {'n_neighbors': 20},     # More neighbors
+        'k_50': {'n_neighbors': 50}      # Even more neighbors
+    }
+    
+    # Choose a sample query (can be a movie title or keyword)
+    sample_query_knn = 'science fiction action'
+    num_recommendations_knn_exp = 10 # Number of recommendations to display
+    
+    print(f"Generating kNN recommendations for query '{sample_query_knn}' using different 'n_neighbors' settings:")
+    
+    for name, params in knn_experiments.items():
+        print(f"\n--- kNN Experiment: {name} ---")
+        try:
+            # Generate recommendations using the current n_neighbors
+            current_knn_recommendations = generate_recommendations_knn(
+                sample_query_knn,
+                merged_df,
+                tfidf_matrix, # Use the original TF-IDF matrix
+                num_recommendations=params['n_neighbors'] # Set num_recommendations to n_neighbors for this test
+            )
+    
+            print(f"Recommendations for '{sample_query_knn}' with {name} kNN ({params['n_neighbors']} neighbors):")
+            display(current_knn_recommendations)
+    
+            # Qualitative assessment (manual observation of displayed recommendations)
+            print(f"Qualitative Assessment for {name}: [Observe the recommendations above and note changes compared to other k values]")
+    
+        except Exception as e:
+            print(f"Error running kNN experiment {name}: {e}")
+    
+    # @title kNN Confidence Score (Cosine Similarity)
+    
+    from matplotlib import pyplot as plt
+    current_knn_recommendations['Confidence Score (Cosine Similarity)'].plot(kind='line', figsize=(8, 4), title='kNN Confidence Score (Cosine Similarity)')
+    plt.gca().spines[['top', 'right']].set_visible(False)
+    
+    # =========================
+    # Re-evaluate Optimal K (Elbow) and Perform Clustering
+    # =========================
+    import warnings
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from sklearn.cluster import KMeans
+    from sklearn.metrics.pairwise import cosine_similarity
+    from sklearn.decomposition import TruncatedSVD, PCA # Import reducers
+    from tensorflow.keras.models import Model # Import Keras Model to check encoder output shape
+    import pandas as pd # pandas is imported
+    
+    print("\n## Re-evaluating Optimal Number of Clusters (Elbow Method) for KMeans\n")
+    
+    if 'current_encoder' not in globals() or not isinstance(current_encoder, Model) or current_encoder.output_shape[1] != 256:
+        print("current_encoder (256-feature output) not found or is incorrect. Cannot proceed.")
+        # Exit or raise an error if encoder is missing
+        raise NameError("Required 'current_encoder' (256-feature output) is not available.")
+    
+    # Regenerate latent features from the 256-feature encoder
+    print("Generating 256-feature latent features from current_encoder...")
+    latent_features_256d = current_encoder.predict(tfidf_scaled, verbose=0)
+    print(f"256-feature latent features generated. Shape: {latent_features_256d.shape}")
+    
+    
+    # Determine the feature space KMeans was fitted on or should be fitted on
+    # This depends on whether a reducer was used before fitting KMeans previously.
+    # We need to check the dimensionality of features_for_kmeans if it exists,
+    # or a target dimension if the previous steps defined one (e.g., N_COMPONENTS=128).
+    
+    
+    target_kmeans_dim = 128 # KMeans should operate on 128 features to HF deployment support
+    
+    
+    # If the encoder output dim is different from the target KMeans dim, a reducer is needed
+    reducer_needed = latent_features_256d.shape[1] != target_kmeans_dim
+    
+    if reducer_needed:
+        print(f"Encoder output ({latent_features_256d.shape[1]}d) differs from target KMeans dim ({target_kmeans_dim}d). A reducer is needed.")
+        # Create and fit a reducer (e.g., TruncatedSVD) to get to the target dimension
+        # Fit the reducer on the 256-feature latent space
+        reducer = TruncatedSVD(n_components=target_kmeans_dim, random_state=42)
+        print(f"Fitting TruncatedSVD reducer from {latent_features_256d.shape[1]}d to {target_kmeans_dim}d...")
+        features_for_kmeans = reducer.fit_transform(latent_features_256d)
+        print(f"Features for KMeans (reduced) generated. Shape: {features_for_kmeans.shape}")
+    
+        # Store the fitted reducer in globals so query_clustering_recommendations can access it
+        globals()['reducer'] = reducer
+    
+    else:
+        print(f"Encoder output ({latent_features_256d.shape[1]}d) matches target KMeans dim ({target_kmeans_dim}d). No reducer needed.")
+        features_for_kmeans = latent_features_256d
+        # Ensure reducer is None or not needed in globals for query function
+        if 'reducer' in globals():
+            del globals()['reducer']
+    
+    
+    # --- Elbow Method (run on features_for_kmeans) ---
+    inertia = []
+    cluster_range = range(1, 150, 10)  # 1, 11, 21, ... 141
+    
+    print(f"\nCalculating inertia for different numbers of clusters (using {features_for_kmeans.shape[1]}d feature space)...")
+    X_kmeans_space = features_for_kmeans  # Use the features KMeans will be fitted on
+    
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for k in cluster_range:
+            km_tmp = KMeans(n_clusters=k, random_state=42, n_init=10)
+            km_tmp.fit(X_kmeans_space)
+            inertia.append(km_tmp.inertia_)
+            print(f"Completed KMeans for k={k}, Inertia: {km_tmp.inertia_:.2f}")
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(list(cluster_range), inertia, marker='o', linestyle='-')
+    plt.title(f'Elbow Method for Optimal Number of Clusters (on {features_for_kmeans.shape[1]}d features)')
+    plt.xlabel('Number of Clusters (k)')
+    plt.ylabel('Inertia (Within-cluster sum of squares)')
+    plt.xticks(list(cluster_range))
+    plt.grid(True)
+    plt.show()
+    
+    print("\nObserve the plot again to find the 'elbow' point.")
+    print("This point is a guideline for choosing the number of clusters.")
+    
+    # =========================
+    # Perform Clustering with Chosen Number and Assess Recommendations
+    # =========================
+    
+    n_clusters_tuned = 10 # chosen value
+    
+    print(f"\nPerforming KMeans clustering with chosen number of clusters ({n_clusters_tuned})...")
+    
+    kmeans_model_tuned = KMeans(n_clusters=n_clusters_tuned, random_state=42, n_init=10)
+    cluster_labels_tuned = kmeans_model_tuned.fit_predict(X_kmeans_space) # Fit on the prepared KMeans features
+    
+    # Ensure merged_df is available and not empty before adding columns
+    if 'merged_df' in globals() and not merged_df.empty:
+        merged_df['kmeans_cluster_tuned'] = cluster_labels_tuned
+        print(f"Clustering complete with {n_clusters_tuned} clusters.")
+        print("\nDistribution of movies per new cluster:")
+        print(merged_df['kmeans_cluster_tuned'].value_counts().sort_index())
+    
+        # =========================
+        # Query → Recos using tuned KMeans (same space as elbow/KMeans)
+        # =========================
+        # This uses the fitted TF-IDF, encoder, and (optional) reducer to map the text query
+        # into the exact KMeans feature space, assigns the cluster, then ranks items in that cluster
+        # by cosine similarity in that same space.
+        def query_clustering_recommendations(
+            query_text: str,
+            df,
+            tfidf_vectorizer,
+            encoder_model, # Expects 256d output
+            kmeans_model, # Expects the dimension KMeans was fitted on (e.g., 128d)
+            reducer=None, # The reducer that transforms 256d to kmeans_model.n_features_in_
+            num_recommendations: int = 10
+        ):
+            """
+            Generate recommendations for a free-text query using tuned KMeans clusters.
+    
+            Steps:
+              TF-IDF(query) -> encoder -> (optional reducer) => query_vec_in_kmeans_space
+              cluster = kmeans.predict(query_vec)
+              rank members of that cluster by cosine similarity in the same space
+            """
+            if not isinstance(query_text, str) or not query_text.strip():
+                return df.iloc[0:0]
+    
+            # 1) TF-IDF
+            # Ensure query_text is in a list for transform
+            q_tfidf = tfidf_vectorizer.transform([query_text])
+            # ensure dense if the encoder expects dense (Keras Dense layer does)
+            q_dense = q_tfidf.toarray()
+    
+            # 2) Encoder → 256-D
+            # Ensure encoder_model is defined and fitted
+            if encoder_model is None:
+                 print("Error: encoder_model is not available.")
+                 return df.iloc[0:0]
+            q_emb = encoder_model.predict(q_dense, verbose=0)  # shape: (1, 256)
+    
+            # 3) Optional reducer to match KMeans expected dim
+            # Check if reducer is needed based on KMeans expected input features
+            # and if the passed reducer is the correct one (transforming 256d to expected dim)
+            kmeans_expected_dim = kmeans_model.n_features_in_ if hasattr(kmeans_model, 'n_features_in_') else None
+    
+            if kmeans_expected_dim is not None and q_emb.shape[1] != kmeans_expected_dim:
+                # Reducer is needed if encoder output doesn't match KMeans input
+                if reducer is not None and hasattr(reducer, 'transform'):
+                    # Check if the reducer is expected to transform from 256d
+                     if hasattr(reducer, 'n_features_in_') and reducer.n_features_in_ == q_emb.shape[1]:
+                        print(f"Applying reducer from {q_emb.shape[1]}d to {reducer.n_components}d...")
+                        q_kspace = reducer.transform(q_emb)  # shape: (1, n_components)
+                     else:
+                        print(f"Error: Provided reducer expects {getattr(reducer, 'n_features_in_', 'unknown')} features, but query embedding has {q_emb.shape[1]}. Cannot apply reducer.")
+                        return df.iloc[0:0]
+                else:
+                    print(f"Error: Reducer is needed to transform {q_emb.shape[1]}d to {kmeans_expected_dim}d but is not provided or not fitted correctly.")
+                    return df.iloc[0:0]
+            else:
+                # No reducer needed, or encoder output matches KMeans input
+                q_kspace = q_emb  # shape matches kmeans_model.n_features_in_
+    
+    
+            # Check if the transformed query embedding matches KMeans expected dimension
+            if hasattr(kmeans_model, 'n_features_in_') and q_kspace.shape[1] != kmeans_model.n_features_in_:
+                print(f"Error: Query embedding in KMeans space ({q_kspace.shape[1]}d) does not match KMeans expected input ({kmeans_model.n_features_in_}d).")
+                return df.iloc[0:0]
+    
+    
+            # 4) Predict cluster
+            # Ensure kmeans_model is defined and fitted
+            if kmeans_model is None or not hasattr(kmeans_model, 'predict'):
+                 print("Error: kmeans_model is not available or not fitted.")
+                 return df.iloc[0:0]
+            cluster_id = int(kmeans_model.predict(q_kspace)[0])
+    
+            # 5) Members in that cluster
+            # Ensure df has the correct cluster labels column
+            cluster_col_name = 'kmeans_cluster_tuned' # Use the tuned column name
+            if cluster_col_name not in df.columns:
+                 print(f"Error: Cluster column '{cluster_col_name}' not found in DataFrame.")
+                 return df.iloc[0:0]
+    
+            members_idx = df.index[df[cluster_col_name] == cluster_id].tolist()
+            if not members_idx:
+                print(f"No members found in cluster {cluster_id}.")
+                return df.iloc[0:0]
+    
+            # 6) Rank by cosine similarity in KMeans space
+            # Need the features for KMeans for the members of the cluster
+            # X_kmeans_space contains features for ALL movies. Filter it for cluster members.
+            if X_kmeans_space is None or X_kmeans_space.shape[0] != df.shape[0]:
+                 print("Error: X_kmeans_space is not available or does not match DataFrame size.")
+                 return df.iloc[0:0]
+    
+            member_vecs = X_kmeans_space[members_idx] # Select features for cluster members
+    
+            if member_vecs.shape[0] == 0:
+                 print(f"No feature vectors found for members in cluster {cluster_id}.")
+                 return df.iloc[0:0]
+    
+            # Calculate similarity between the single query vector and all member vectors
+            sims = cosine_similarity(q_kspace, member_vecs).flatten()
+    
+            # Get indices of top recommendations among cluster members
+            # Exclude the query itself if it's in the results (cosine sim of 1.0)
+            # However, for a free-text query, the query itself won't be in the dataset,
+            # so we just sort and take the top N.
+            order = np.argsort(-sims)[:num_recommendations]
+            top_idx = [members_idx[i] for i in order]
+            top_scores = sims[order]
+    
+            # Ensure required display columns exist in df
+            required_display_cols = ['title', 'overview_sentiment_score', 'genres', 'keywords']
+            if not all(col in df.columns for col in required_display_cols):
+                 print(f"Error: Required display columns ({required_display_cols}) not found in DataFrame.")
+                 # Return partial data if possible, or empty
+                 available_cols = [col for col in required_display_cols if col in df.columns]
+                 if available_cols:
+                     out = df.loc[top_idx, available_cols].copy()
+                     out.insert(0, 'cluster_id', cluster_id)
+                     out.insert(1, 'cluster_similarity', top_scores)
+                     return out
+                 else:
+                     return df.iloc[0:0]
+    
+    
+            out = df.loc[top_idx, required_display_cols].copy()
+            out.insert(0, 'cluster_id', cluster_id)
+            out.insert(1, 'cluster_similarity', top_scores)
+            return out
+    
+        # Figure out which reducer (if any) you used for KMeans space
+        # The reducer should transform from 256d (encoder output) to the dimension KMeans expects.
+        # We explicitly create and fit the reducer above if needed, and store it in globals()['reducer'].
+        # The query_clustering_recommendations function expects this reducer if needed.
+        reducer_for_query = globals().get('reducer', None)
+    
+    
+        # Example query
+        clustering_search_query_tuned = 'space adventure'
+    
+        print(f"\nGenerating Clustering Recommendations for query '{clustering_search_query_tuned}' using {n_clusters_tuned} clusters:")
+        clustering_recommendations_tuned = query_clustering_recommendations(
+            clustering_search_query_tuned,
+            merged_df,
+            current_tfidf,            #  fitted TF-IDF (needed for query vectorization)
+            current_encoder,          #  trained encoder (256-D output)
+            kmeans_model_tuned,       # tuned KMeans fitted on X_kmeans_space
+            reducer=reducer_for_query, # Pass the fitted reducer if needed
+            num_recommendations=10
+        )
+        display(clustering_recommendations_tuned)
+    
+        print("\nQualitative Assessment for Clustering Tuning: [Observe the recommendations and their clusters.]")
+        print("Consider if the movies within the clusters seem more related with the new number of clusters.")
+        print("Also, check if the recommendations for the sample query are relevant based on the identified cluster.")
+    
+    else:
+        print("\nSkipping KMeans tuning and recommendation generation due to missing merged_df.")
 
-
-if __name__ == "__main__":
-    main()
