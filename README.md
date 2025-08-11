@@ -29,9 +29,9 @@ The notebook implements and experiments with the following recommendation models
 
 ***Item-Based Clustering***: Using KMeans clustering on Autoencoder-learned latent features to group similar movies.
 
-***Sentiment analysis*** On movie overviews is performed using the VADER tool from the NLTK library.
+***Sentiment analysis***: On movie overviews is performed using the VADER tool from the NLTK library.
 
-***Agentic*** An Agentic Flow using LangChain and OpenAI is also implemented to interpret natural language user input, detect sentiment, and utilize the recommendation models via defined tools.
+***Agentic***: An Agentic Flow using LangChain and OpenAI is also implemented to interpret natural language user input, detect sentiment, and utilize the recommendation models via defined tools.
 
 ![AI Agent Flow](./src/MovieRecommendationsAgenticFlow.png)
 
